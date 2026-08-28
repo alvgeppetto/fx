@@ -332,12 +332,15 @@ fn agent_terminal_lease_transition(
     if (parsed != .object) return error.InvalidTerminalLeaseTrackingInput;
     const action = parsed.object.get("action") orelse return error.InvalidTerminalLeaseTrackingInput;
     if (action != .string) return error.InvalidTerminalLeaseTrackingInput;
-    if (!std.mem.eql(u8, action.string, "write")) return null;
+    const is_write = std.mem.eql(u8, action.string, "write");
+    const is_close = std.mem.eql(u8, action.string, "close");
+    if (!is_write and !is_close) return null;
     const session_id = parsed.object.get("session_id") orelse
         return error.InvalidTerminalLeaseTrackingInput;
     if (session_id != .string) {
         return error.InvalidTerminalLeaseTrackingInput;
     }
+    if (is_close) return .{ .remove = session_id.string };
     const lease_value = parsed.object.get("lease");
     const lease_absent = lease_value == null or terminal_lease_is_absent(lease_value.?);
     if (lease_absent) {
@@ -358,7 +361,7 @@ fn agent_terminal_lease_transition(
     };
 }
 
-test "agent terminal lease transitions derive from normalized validated write intent" {
+test "agent terminal lease transitions derive from normalized validated actions" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -427,6 +430,22 @@ test "agent terminal lease transitions derive from normalized validated write in
             ),
             .track, .remove => unreachable,
         }
+    }
+    const close = (try agent_terminal_lease_transition(
+        arena,
+        registry,
+        .{
+            .id = "close",
+            .name = "terminal",
+            .arguments_json = "{\"action\":\"close\",\"session_id\":\"terminal-one\",\"close_policy\":\"force\"}",
+        },
+    )).?;
+    switch (close) {
+        .remove => |session_id| try std.testing.expectEqualStrings(
+            "terminal-one",
+            session_id,
+        ),
+        .track, .atomic => unreachable,
     }
     try std.testing.expect((try agent_terminal_lease_transition(
         arena,
@@ -1010,7 +1029,8 @@ fn prepareDeferredDynamicCandidate(
     const validate = ctx.deps.validate_tool_call orelse return false;
     return switch (try validate(ctx.deps.ctx, alloc, call)) {
         .not_registered => false,
-        .valid, .failure => true,
+        .valid => true,
+        .failure => true,
     };
 }
 
@@ -6338,8 +6358,25 @@ fn processQueuedPromptLoop(
                 }
             else
                 true;
-            if (requires_legacy_classification) {
-                if (try runtime_tool_admission.registeredToolValidationFailure(deps, arena, tool_call)) |execution| {
+            var expected_mcp_runtime_generation: ?u64 = null;
+            const requires_action_validation = requires_legacy_classification or
+                tool_mcp_runtime.isAdvertisedDynamicToolName(
+                    advertised_dynamic_tool_names,
+                    tool_call.name,
+                );
+            if (requires_action_validation) {
+                const validation_failure: ?ToolExecutionResult = switch (try runtime_tool_admission.toolCallValidation(deps, arena, tool_call)) {
+                    .not_registered => null,
+                    .valid => |witness| valid: {
+                        expected_mcp_runtime_generation = witness.mcp_runtime_generation;
+                        break :valid null;
+                    },
+                    .failure => |reason| .{
+                        .model_output = reason,
+                        .status = .failure,
+                    },
+                };
+                if (validation_failure) |execution| {
                     try terminal_validation_retry.observe(
                         arena,
                         tool_call,
@@ -7170,6 +7207,7 @@ fn processQueuedPromptLoop(
                 .live_authority = if (live_authority) |resolved| resolved.authority else null,
                 .advertised_dynamic_tool_names = advertised_dynamic_tool_names,
                 .max_tool_result_bytes = config.max_tool_result_bytes,
+                .expected_mcp_runtime_generation = expected_mcp_runtime_generation,
                 .classification_complete = if (preparation_batch.preparations[tool_call_index]) |preparation|
                     switch (preparation) {
                         .candidate => |candidate| preparedCandidateClassificationComplete(candidate),

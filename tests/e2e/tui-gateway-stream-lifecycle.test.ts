@@ -3059,7 +3059,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
       expect(repairedResults).toEqual([
         expect.objectContaining({
           output: expect.objectContaining({
-            type: "text",
+            type: "error-text",
             value: expect.stringContaining("tool_execution_failed"),
           }),
         }),
@@ -7804,6 +7804,115 @@ describe.skipIf(!tmuxAvailable())("transcript scrollback release", () => {
       { encoding: "utf8" },
     );
   }
+
+  test(
+    "idle running activity advances without composer input",
+    async () => {
+      root = realpathSync(mkdtempSync(join(tmpdir(), "fx-tui-idle-running-activity-")));
+      const home = join(root, "home");
+      const workspace = join(root, "workspace");
+      const stderrPath = join(root, "stderr.log");
+      const tracePath = join(root, "trace.log");
+      const tapePath = join(root, "session.fxtape");
+      mkdirSync(join(home, ".fx"), { recursive: true });
+      mkdirSync(workspace, { recursive: true });
+      writeFileSync(join(home, ".fx", "settings.json"), sbSettings());
+      writeFileSync(stderrPath, "");
+
+      const command = "sleep 6; printf IDLE_ACTIVITY_COMMAND_DONE";
+      const finalText = "IDLE_ACTIVITY_TURN_DONE";
+      const historyLines = Array.from(
+        { length: 48 },
+        (_, index) => `IDLE_ACTIVITY_HISTORY_${String(index + 1).padStart(2, "0")}`,
+      );
+      gateway = startFakeGateway([
+        fakeGatewaySse([
+          { type: "text-start", id: "idle-activity-history" },
+          ...historyLines.map((line) => ({
+            type: "text-delta" as const,
+            id: "idle-activity-history",
+            delta: `${line}\n`,
+          })),
+          { type: "text-end", id: "idle-activity-history" },
+          {
+            type: "tool-call",
+            toolCallId: "idle-activity-command",
+            toolName: "terminal",
+            input: { action: "exec", command, timeout_ms: 600_000 },
+          },
+          {
+            type: "finish",
+            finishReason: { unified: "tool-calls", raw: "tool-calls" },
+          },
+        ]),
+        fakeGatewayFinalText(finalText),
+      ]);
+      const fakeGateway = gateway as ReturnType<typeof startFakeGateway>;
+
+      session = await TmuxSession.create({
+        cmd: FX_BIN,
+        cwd: workspace,
+        width: 114,
+        height: 35,
+        stderrPath,
+        env: {
+          HOME: home,
+          AI_GATEWAY_API_KEY: "fake-idle-running-activity-key",
+          VERCEL_OIDC_TOKEN: undefined,
+          FX_AUTO_UPGRADE: "0",
+          FX_GATEWAY_BASE_URL: fakeGateway.baseUrl,
+          FX_GATEWAY_CHAT_URL: fakeGateway.chatUrl,
+          FX_E2E_GATEWAY_CHAT_URL: fakeGateway.chatUrl,
+          FX_MODEL: MODEL,
+          FX_MAX_AGENT_STEPS: "3",
+          FX_RECORD: tapePath,
+          FX_RECORD_INPUT: "1",
+          FX_TRACE_LOG: tracePath,
+          FX_TRACE_SCOPES: "frame_schedule,frame_diff,paint,worker,ui_activity",
+        },
+      });
+
+      await session.waitForComposer(SB_TIMEOUT);
+      await session.sendText("Run the idle activity fixture.");
+      await session.waitForText(`Running ${command}`, SB_TIMEOUT);
+
+      const historyBeforeActivity = sbHistoryText(session.name);
+      expect(historyBeforeActivity.length).toBeGreaterThan(0);
+      const traceOffset = readFileSync(tracePath, "utf8").length;
+      const elapsedSeconds = new Set<number>();
+      const markerStates = new Set<boolean>();
+      for (let sample = 0; sample < 12; sample += 1) {
+        const pane = await session.capturePane();
+        const activity = pane.match(/(^|\n)(•| ) Running \((\d+)s\)/);
+        expect(activity, `activity sample ${sample}`).not.toBeNull();
+        markerStates.add(activity![2] === "•");
+        elapsedSeconds.add(Number.parseInt(activity![3]!, 10));
+        await Bun.sleep(250);
+      }
+
+      expect(elapsedSeconds.size).toBeGreaterThan(1);
+      expect(markerStates).toEqual(new Set([true, false]));
+      expect(sbHistoryText(session.name)).toBe(historyBeforeActivity);
+      const activityTrace = readFileSync(tracePath, "utf8").slice(traceOffset);
+      const animationAttempts = activityTrace
+        .split("\n")
+        .filter((line) => line.includes("[frame_schedule] attempt_begin reasons=animation "));
+      const animationResults = activityTrace
+        .split("\n")
+        .filter((line) => line.includes("[frame_diff] attempt_result "));
+      expect(animationAttempts.length).toBeGreaterThan(0);
+      expect(animationResults.length).toBeGreaterThan(0);
+      for (const result of animationResults) {
+        expect(result).toContain(
+          "transcript_body=retain body_paints=0 retained_changed_cells=0",
+        );
+      }
+      await session.waitForText(finalText, SB_TIMEOUT);
+      expect(readFileSync(stderrPath, "utf8")).toBe("");
+      expect(existsSync(tapePath)).toBe(true);
+    },
+    SB_TIMEOUT + 20_000,
+  );
 
   test(
     "closed tool groups enter native scrollback before the turn finishes",

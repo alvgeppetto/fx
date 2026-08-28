@@ -586,6 +586,7 @@ const App = struct {
     pub fn init(alloc: Allocator, launch: *cli_surface.InteractiveLaunch) !Self {
         var app = Self{
             .alloc = alloc,
+            .shell = TranscriptRuntime.init(),
             .subagents = ui_subagents.Controller.init(),
             .lifecycle_runtime = hooks.Runtime.init(alloc),
             .background = BackgroundRuntime.init(if (comptime host_target.is_wasm)
