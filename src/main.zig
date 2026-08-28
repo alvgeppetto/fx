@@ -1143,6 +1143,7 @@ const App = struct {
             draft.images,
             draft.turn_id,
             true,
+            .prompt,
         )) return error.PendingPromptQueueRejected;
         WorkerAppRuntime.syncState(
             self,
@@ -1305,6 +1306,7 @@ const App = struct {
             null,
             0,
             false,
+            .prompt,
         );
     }
 
@@ -1324,6 +1326,7 @@ const App = struct {
             null,
             checkpoint.turn_id,
             false,
+            .prompt,
         )) return false;
         WorkerAppRuntime.syncState(
             self,
@@ -1341,6 +1344,7 @@ const App = struct {
         prompt_images: ?[]const types.ImageAttachment,
         turn_id: u64,
         user_prompt_already_presented: bool,
+        work_kind: worker_runtime.WorkKind,
     ) !bool {
         try self.reloadSkills();
 
@@ -1429,6 +1433,7 @@ const App = struct {
             );
 
         try self.worker.enqueuePrompt(std.heap.c_allocator, .{
+            .kind = work_kind,
             .turn_id = if (recovery_checkpoint) |checkpoint| checkpoint.turn_id else turn_id,
             .prompt = prompt_copy,
             .images = images_copy,
@@ -1441,7 +1446,7 @@ const App = struct {
             .account_id = account_id_copy,
             .permission_mode = self.permission_engine.mode,
             .history = history_copy,
-            .context_history_start = self.session.contextHistoryStart(),
+            .unversioned_history_count = self.session.contextUnversionedHistoryCount(),
             .root_user_intent_context = root_user_intent_context,
             .grants = grants_copy,
             .skill_bindings = skill_bindings,
@@ -1454,6 +1459,24 @@ const App = struct {
         });
         HerdrAppRuntime.reportWorking(self);
         return true;
+    }
+
+    pub fn enqueueContextCompaction(self: *App) !bool {
+        if (self.worker.isProcessing() or self.worker.queuedPromptCount() > 0) return false;
+        return self.snapshotAndQueuePrompt(
+            "",
+            &.{},
+            null,
+            null,
+            &.{},
+            0,
+            false,
+            .compact_context,
+        );
+    }
+
+    pub fn hasContextToCompact(self: *const App) bool {
+        return self.session.hasContextToCompact();
     }
 
     pub fn installInitialMcpRuntime(self: *App, runtime: ?*mcp_runtime_mod.McpRuntime) void {
@@ -2000,12 +2023,20 @@ const App = struct {
     }
 
     pub fn processQueuedPrompt(self: *App, job: QueuedPrompt) !void {
-        AgentAppRuntime.processQueuedPrompt(
-            self,
-            job,
-            builtin_gateway.retry_count,
-            builtin_gateway.defaultChatUrl(),
-        ) catch |err| {
+        const result = switch (job.kind) {
+            .prompt => AgentAppRuntime.processQueuedPrompt(
+                self,
+                job,
+                builtin_gateway.retry_count,
+                builtin_gateway.defaultChatUrl(),
+            ),
+            .compact_context => AgentAppRuntime.processContextCompaction(
+                self,
+                job,
+                builtin_gateway.retry_count,
+            ),
+        };
+        result catch |err| {
             if (err == error.TurnFinalizationDeliveryFailed) return;
             return err;
         };
