@@ -89,7 +89,7 @@ fn writeHistoryTurnJson(writer: *std.Io.Writer, turn: session.HistoryTurn) !void
             try writeUserTurnJson(writer, entry.user);
             try writer.writeAll(",\"assistant\":");
             try std.json.Stringify.value(entry.assistant, .{}, writer);
-            if (entry.execution.tool_steps.len > 0 or entry.execution.files.len > 0) {
+            if (!entry.execution.isEmpty()) {
                 try writer.writeAll(",\"execution\":");
                 try writeExecutionMemoryJson(writer, entry.execution);
             }
@@ -190,6 +190,11 @@ pub fn writeExecutionMemoryJson(writer: *std.Io.Writer, execution: session.Execu
     for (execution.files, 0..) |file, i| {
         if (i > 0) try writer.writeByte(',');
         try writeFileEvidenceJson(writer, file);
+    }
+    try writer.writeAll("],\"steering\":[");
+    for (execution.steering, 0..) |text, i| {
+        if (i > 0) try writer.writeByte(',');
+        try std.json.Stringify.value(text, .{}, writer);
     }
     try writer.writeAll("]}");
 }
@@ -763,8 +768,10 @@ fn parseOptionalExecutionMemory(alloc: Allocator, maybe_value: ?std.json.Value) 
         schema_version,
     );
     errdefer session.freeExecutionMemory(alloc, .{ .tool_steps = tool_steps });
+    const steering = try parseOptionalStringArray(alloc, object.get("steering"));
+    errdefer types.freePermissionFeedback(alloc, steering);
     const files = try parseFileEvidenceSlice(alloc, object.get("files"));
-    return .{ .tool_steps = tool_steps, .files = files };
+    return .{ .tool_steps = tool_steps, .files = files, .steering = steering };
 }
 
 fn parseToolExecutionSteps(
@@ -1601,6 +1608,7 @@ test "session JSON round-trips assistant execution memory" {
         .tool_calls = calls[0..],
         .tool_results = results[0..],
     }};
+    var steering = [_][]u8{@constCast("focus on rendering")};
     var files = [_]session.FileEvidence{.{
         .path = @constCast("src/main.zig"),
         .tool_call_id = @constCast("call_read"),
@@ -1613,7 +1621,7 @@ test "session JSON round-trips assistant execution memory" {
     const history = [_]session.HistoryTurn{.{ .assistant = .{
         .user = .{ .text = @constCast("what is main") },
         .assistant = @constCast("main wires the app"),
-        .execution = .{ .tool_steps = steps[0..], .files = files[0..] },
+        .execution = .{ .tool_steps = steps[0..], .files = files[0..], .steering = steering[0..] },
     } }};
 
     const json = try renderSessionJson(alloc, "exec-json", 1, 2, session.ConversationLanguage.literal("en"), "/tmp/workspace", &history, .{});
@@ -1623,6 +1631,7 @@ test "session JSON round-trips assistant execution memory" {
     try std.testing.expect(std.mem.find(u8, json, "\"files\"") != null);
     try std.testing.expect(std.mem.find(u8, json, "\"schema_version\":2") != null);
     try std.testing.expect(std.mem.find(u8, json, "\"permission_feedback\"") != null);
+    try std.testing.expect(std.mem.find(u8, json, "\"steering\":[\"focus on rendering\"]") != null);
 
     var loaded = try parseStoredSession(TestStoredSession, alloc, json);
     defer loaded.deinit(alloc);
@@ -1643,6 +1652,8 @@ test "session JSON round-trips assistant execution memory" {
     try std.testing.expectEqual(@as(usize, 1), execution.files.len);
     try std.testing.expectEqual(.read, execution.files[0].action);
     try std.testing.expect(execution.files[0].model_view_covers_full_file);
+    try std.testing.expectEqual(@as(usize, 1), execution.steering.len);
+    try std.testing.expectEqualStrings("focus on rendering", execution.steering[0]);
 }
 
 const legacy_execution_memory_fixture =

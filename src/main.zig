@@ -1038,7 +1038,12 @@ const App = struct {
             prompt,
             skill_tokens,
             null,
+            .queue,
         );
+    }
+
+    pub fn steerPrompt(self: *App, prompt: []const u8) !bool {
+        return self.enqueuePromptWithOptionalReview(prompt, &.{}, null, .steer);
     }
 
     pub fn enqueuePromptWithReviewDraft(
@@ -1067,14 +1072,18 @@ const App = struct {
                 .image_tokens = @constCast(review_image_tokens),
                 .skill_display_spans = review_skill_spans,
             },
+            .queue,
         );
     }
+
+    const PromptSubmitIntent = enum { queue, steer };
 
     fn enqueuePromptWithOptionalReview(
         self: *App,
         prompt: []const u8,
         skill_tokens: []const registered_entities.SkillTokenSpan,
         review_draft: ?worker_runtime.QueueReviewDraft,
+        intent: PromptSubmitIntent,
     ) !bool {
         const context_targets = if (self.context_enabled)
             try context_contract.applicableTargetsForImages(self.alloc, self.pending_images.items)
@@ -1099,6 +1108,7 @@ const App = struct {
             prompt,
             skill_tokens,
             review_draft,
+            intent,
         )) return false;
         WorkerAppRuntime.syncState(
             self,
@@ -1144,6 +1154,7 @@ const App = struct {
             draft.turn_id,
             true,
             .prompt,
+            .queue,
         )) return error.PendingPromptQueueRejected;
         WorkerAppRuntime.syncState(
             self,
@@ -1297,6 +1308,7 @@ const App = struct {
         prompt: []const u8,
         skill_tokens: []const registered_entities.SkillTokenSpan,
         review_draft: ?worker_runtime.QueueReviewDraft,
+        intent: PromptSubmitIntent,
     ) !bool {
         return self.snapshotAndQueuePrompt(
             prompt,
@@ -1307,6 +1319,7 @@ const App = struct {
             0,
             false,
             .prompt,
+            intent,
         );
     }
 
@@ -1327,6 +1340,7 @@ const App = struct {
             checkpoint.turn_id,
             false,
             .prompt,
+            .queue,
         )) return false;
         WorkerAppRuntime.syncState(
             self,
@@ -1345,6 +1359,7 @@ const App = struct {
         turn_id: u64,
         user_prompt_already_presented: bool,
         work_kind: worker_runtime.WorkKind,
+        intent: PromptSubmitIntent,
     ) !bool {
         try self.reloadSkills();
 
@@ -1432,7 +1447,7 @@ const App = struct {
                 review,
             );
 
-        try self.worker.enqueuePrompt(std.heap.c_allocator, .{
+        try self.worker.admitPrompt(std.heap.c_allocator, .{
             .kind = work_kind,
             .turn_id = if (recovery_checkpoint) |checkpoint| checkpoint.turn_id else turn_id,
             .prompt = prompt_copy,
@@ -1456,7 +1471,7 @@ const App = struct {
             .recovery_checkpoint = recovery_checkpoint_copy,
             .recovery_source_already_presented = recovery_checkpoint != null,
             .user_prompt_already_presented = user_prompt_already_presented,
-        });
+        }, recovery_checkpoint == null and intent == .steer);
         HerdrAppRuntime.reportWorking(self);
         return true;
     }
@@ -1472,6 +1487,7 @@ const App = struct {
             0,
             false,
             .compact_context,
+            .queue,
         );
     }
 

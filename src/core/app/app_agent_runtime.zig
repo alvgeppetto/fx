@@ -864,12 +864,12 @@ pub fn Runtime(comptime App: type) type {
                     if (should_emit) {
                         const body = try types.renderContextNoticeBody(app.alloc, notice);
                         defer app.alloc.free(body);
-                        try app.writeDomainNotice(.{
+                        app.writeDomainNotice(.{
                             .topic = "context",
                             .tone = .warning,
                             .body = body,
                             .visibility = .full_only,
-                        }, true);
+                        }, true) catch return error.WriteFailed;
                     }
                 }
             }
