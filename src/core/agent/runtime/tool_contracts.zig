@@ -1,11 +1,11 @@
 const std = @import("std");
 const command_admission = @import("../../permissions/command_admission.zig");
-const command_contract = @import("../../execution/command_contract.zig");
 const types = @import("../../shared/types.zig");
 const diff = @import("../../output/diff.zig");
 const file_mutation = @import("../../tooling/file_mutation.zig");
 const session_permission_state = @import("../../permissions/session_permission_state.zig");
 const command_replay_store = @import("../../session/command_replay_store.zig");
+const result_commit = @import("../../tooling/result_commit.zig");
 
 pub const vision = @import("vision_contracts.zig");
 
@@ -82,7 +82,6 @@ pub const ToolExecutionResult = struct {
     system_notice: ?[]const u8 = null,
     interactive_notice: ?types.SemanticNotice = null,
     context_notices: []const []const u8 = &.{},
-    background_command: ?command_contract.BackgroundCommand = null,
     command_result_json: ?[]const u8 = null,
     web_search_completion: ?types.WebSearchCompletion = null,
     web_fetch_completion: ?types.WebFetchCompletion = null,
@@ -94,6 +93,7 @@ pub const ToolExecutionResult = struct {
     committed_file_handoff: ?file_mutation.CommittedFileHandoff = null,
     deferred_tool_completion: ?DeferredToolCompletion = null,
     command_replay_capture: ?*command_replay_store.Capture = null,
+    result_commit: ?result_commit.Token = null,
 };
 
 pub fn unavailableHostToolResult(alloc: Allocator) Allocator.Error!ToolExecutionResult {

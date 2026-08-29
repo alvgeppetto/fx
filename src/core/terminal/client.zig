@@ -8,8 +8,8 @@ const policy = @import("host_policy.zig");
 const io_mod = @import("../shared/io.zig");
 const self_exe = @import("../shared/self_exe.zig");
 const debug_trace = @import("../shared/debug_trace.zig");
-const background_process_provider = @import(
-    "../execution/background_process_provider.zig",
+const process_provider_mod = @import(
+    "../execution/process_provider.zig",
 );
 const ui_projection = @import("ui_projection.zig");
 
@@ -161,8 +161,8 @@ const CompletionSink = struct {
 };
 
 pub const Runtime = struct {
-    process_provider: background_process_provider.Provider =
-        background_process_provider.unavailable_provider,
+    process_provider: process_provider_mod.Provider =
+        process_provider_mod.unavailable_provider,
     mutex: std.Io.Mutex = .init,
     wake: std.Io.Condition = .init,
     queue: Queue = .{},
@@ -190,7 +190,7 @@ pub const Runtime = struct {
     }
 
     pub fn init(
-        process_provider: background_process_provider.Provider,
+        process_provider: process_provider_mod.Provider,
     ) Runtime {
         return .{ .process_provider = process_provider };
     }
@@ -335,7 +335,7 @@ pub const Runtime = struct {
     noinline fn resetDrainedState(self: *Runtime) void {
         // The drain above already nulls every owned slot. Reset only the
         // observable metadata so teardown does not copy the full runtime.
-        self.process_provider = background_process_provider.unavailable_provider;
+        self.process_provider = process_provider_mod.unavailable_provider;
         self.mutex = .init;
         self.wake = .init;
         self.queue.len = 0;
@@ -750,7 +750,7 @@ fn receiveCancellable(
 
 fn connectAndHandshake(
     alloc: Allocator,
-    process_provider: background_process_provider.Provider,
+    process_provider: process_provider_mod.Provider,
 ) !Connected {
     return connectAndHandshakeOnce(alloc, process_provider) catch |err| switch (err) {
         error.HostClosedBeforeHandshake => connectAndHandshakeOnce(
@@ -763,7 +763,7 @@ fn connectAndHandshake(
 
 fn connectAndHandshakeOnce(
     alloc: Allocator,
-    process_provider: background_process_provider.Provider,
+    process_provider: process_provider_mod.Provider,
 ) !Connected {
     if (!host.isSupported()) return error.TerminalHostUnsupported;
     const home = io_mod.getenv("HOME") orelse return error.HomeNotSet;
@@ -823,7 +823,7 @@ fn connectAndHandshakeOnce(
 
 fn connectOrStart(
     alloc: Allocator,
-    process_provider: background_process_provider.Provider,
+    process_provider: process_provider_mod.Provider,
     paths: *host.Paths,
 ) !std.Io.net.Stream {
     const started = io_mod.milliTimestamp();

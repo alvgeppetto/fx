@@ -274,8 +274,7 @@ fn duplicateParallelToolResult(alloc: Allocator, call: ToolCall, execution: Tool
     const tool_name = try alloc.dupe(u8, call.name);
     errdefer alloc.free(tool_name);
 
-    if (execution.background_command != null or
-        execution.diff_entry != null or
+    if (execution.diff_entry != null or
         execution.finish_turn or
         execution.selected_dynamic_tool_name != null or
         execution.selected_dynamic_tool_schema_json != null or
@@ -544,7 +543,7 @@ test "parallel classifier rejects prompts approvals dynamic tools and mutations"
         builtin_tools.mcp_select_tool,
         builtin_tools.subagent,
         builtin_tools.install_skill,
-        builtin_tools.terminal,
+        builtin_tools.shell,
         builtin_tools.read_file,
     };
     const registry = tool_dispatch.Registry{ .tools = &tools };

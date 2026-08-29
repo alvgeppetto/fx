@@ -133,8 +133,8 @@ pub fn formatRunCommandPermissionLabel(
         command,
         max_run_command_activity_bytes,
     );
-    const suffix = try commandApprovalLabelSuffix(scratch, "terminal", command);
-    return std.fmt.allocPrint(alloc, "terminal.exec {s}{s}", .{ encoded.bytes, suffix });
+    const suffix = try commandApprovalLabelSuffix(scratch, "shell", command);
+    return std.fmt.allocPrint(alloc, "shell.run {s}{s}", .{ encoded.bytes, suffix });
 }
 
 pub fn isAdvertisedDynamicMcpName(registry: tool_dispatch.Registry, name: []const u8, advertised: []const []const u8) bool {
@@ -426,7 +426,8 @@ fn appendWebSearchDomains(writer: *std.Io.Writer, label: []const u8, value: ?std
 
 fn commandApprovalLabelSuffix(alloc: Allocator, tool_name: []const u8, command: []const u8) ![]const u8 {
     if (!std.mem.eql(u8, tool_name, "run_command") and
-        !std.mem.eql(u8, tool_name, "terminal")) return "";
+        !std.mem.eql(u8, tool_name, "terminal") and
+        !std.mem.eql(u8, tool_name, "shell")) return "";
     const risk = command_policy.command_risk_note_for(command);
     const safer = command_policy.command_safer_alternative_for(command);
     if (risk == null and safer == null) return "";
@@ -528,7 +529,7 @@ const test_tools = [_]tool_dispatch.Tool{
     test_builtin_tools.write_file,
     test_builtin_tools.edit_file,
     test_web_search,
-    test_builtin_tools.terminal,
+    test_builtin_tools.shell,
     test_builtin_tools.memory,
     test_builtin_tools.skill,
     test_install_skill,
@@ -725,7 +726,7 @@ test "run command activity abbreviates only active workspace paths" {
     });
     defer alloc.free(permission);
     try std.testing.expectEqualStrings(
-        "terminal.exec cd /Users/example/workspace/packages/cli && pwd",
+        "shell.run cd /Users/example/workspace/packages/cli && pwd",
         permission,
     );
 }
@@ -764,7 +765,7 @@ test "run command activity hides only a leading no-op current directory prefix" 
         .arguments_json = "{\"command\":\"cd . && zig build\"}",
     });
     defer alloc.free(permission);
-    try std.testing.expectEqualStrings("terminal.exec cd . && zig build", permission);
+    try std.testing.expectEqualStrings("shell.run cd . && zig build", permission);
 }
 
 test "tool presentation formats bounded web search action detail" {
@@ -811,7 +812,7 @@ test "tool presentation formats permission labels" {
         .arguments_json = "{\"command\":\"npm test\",\"cwd\":\"/tmp/fx\"}",
     });
     defer alloc.free(cwd);
-    try std.testing.expectEqualStrings("terminal.exec npm test", cwd);
+    try std.testing.expectEqualStrings("shell.run npm test", cwd);
 
     const risk = try formatPermissionLabel(alloc, test_tool_registry, .{
         .id = "risk",
@@ -865,9 +866,9 @@ test "terminal display target is call-local across a cold inspect projection upd
     );
 
     const inspect_call = ToolCall{
-        .id = "inspect",
-        .name = "terminal",
-        .arguments_json = "{\"action\":\"inspect\",\"session_id\":\"terminal-cold-session\"}",
+        .id = "wait",
+        .name = "shell",
+        .arguments_json = "{\"action\":\"wait\",\"session_id\":\"terminal-cold-session\"}",
     };
     var cold_snapshot = try projection.snapshot(alloc);
     const current_target = try resolveTerminalDisplayTargetFromRows(
@@ -901,8 +902,8 @@ test "terminal display target is call-local across a cold inspect projection upd
         "/tmp/workspace",
         .{
             .id = "read",
-            .name = "terminal",
-            .arguments_json = "{\"action\":\"read\",\"session_id\":\"terminal-cold-session\"}",
+            .name = "shell",
+            .arguments_json = "{\"action\":\"wait\",\"session_id\":\"terminal-cold-session\"}",
         },
         learned_snapshot.rows,
     ) orelse return error.TestExpectedEqual;
