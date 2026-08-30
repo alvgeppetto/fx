@@ -326,7 +326,7 @@ Startup latency benchmarks live in `benchmarks/` and run in CI via `.github/work
 ./benchmarks/startup.sh --quick    # quick run (20 iterations)
 ```
 
-The CI workflow builds a ReleaseSafe binary, measures six CLI paths with hyperfine, and enforces per-command latency budgets. PRs that exceed a budget fail the check. On `main`, results are uploaded to Vercel Blob for historical tracking.
+The CI workflow builds a ReleaseSafe binary, measures six CLI paths with pinned Hyperfine, and enforces per-command latency budgets. PRs that exceed a budget fail the check. On pull requests it also builds the base revision and records an informational paired-block comparison. Complete evidence is sealed through the optional ProofPack fx plugin and uploaded as a retained workflow artifact.
 
 The startup benchmark uses `FX_BENCH=1`, an environment variable that runs through arg parsing and CLI dispatch, then exits before TTY initialization. This lives in `src/core/app/app_entry_runtime.zig`.
 

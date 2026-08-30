@@ -8,6 +8,8 @@ on:
       - build.zig
       - scripts/pgso/**
       - .github/actions/setup-pgso/**
+      - .github/actions/setup-proofpack-fx/**
+      - integrations/proofpack-fx/**
       - .github/workflows/pgso-macos-arm64.yml
       - .github/workflows/release.yml
 
@@ -448,6 +450,15 @@ jobs:
             --startup-dir "$RUNNER_TEMP/fx-pgso-startup" \
             --heavy-dir "$RUNNER_TEMP/fx-pgso-heavy" \
             --output-dir "$RUNNER_TEMP/fx-pgso-aggregate"
+
+      - name: Setup ProofPack fx plugin
+        uses: ./.github/actions/setup-proofpack-fx
+
+      - name: Seal and verify aggregate evidence
+        run: |
+          set -euo pipefail
+          proofpack fx seal "$RUNNER_TEMP/fx-pgso-aggregate"
+          proofpack fx verify "$RUNNER_TEMP/fx-pgso-aggregate"
 
       - name: Upload aggregate evidence
         if: always()

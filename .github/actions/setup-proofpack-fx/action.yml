@@ -1,0 +1,28 @@
+name: Setup ProofPack fx plugin
+description: Install the external ProofPack Core and fx's optional CLI plugin
+
+inputs:
+  proofpack-ref:
+    description: Exact ProofPack source commit
+    required: false
+    default: 968b8e13589930f9dde919d1334df356943ee509
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: "3.12"
+
+    - name: Install ProofPack Core and fx plugin
+      shell: bash
+      env:
+        PROOFPACK_REF: ${{ inputs.proofpack-ref }}
+      run: |
+        set -euo pipefail
+        python -m pip install \
+          --constraint "$GITHUB_ACTION_PATH/../../../integrations/proofpack-fx/constraints.txt" \
+          "proofpack-core @ git+https://github.com/sersoage/proofpack.git@${PROOFPACK_REF}#subdirectory=packages/core" \
+          "$GITHUB_ACTION_PATH/../../../integrations/proofpack-fx"
+        proofpack fx --help

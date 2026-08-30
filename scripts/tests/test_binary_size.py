@@ -15,7 +15,6 @@ from scripts.binary_size import (
     parse_macho_sections,
 )
 
-
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "binary-size.yml"
 
@@ -56,6 +55,11 @@ class BinarySizeCliTests(unittest.TestCase):
             json_path = root / "report.json"
             markdown_path = root / "report.md"
             github_output = root / "github-output.txt"
+            base_file_report = root / "base-file.txt"
+            head_file_report = root / "head-file.txt"
+            base_file_report.write_text("Mach-O base\n", encoding="utf-8")
+            head_file_report.write_text("Mach-O head\n", encoding="utf-8")
+            evidence_bundle = root / "evidence"
 
             result = subprocess.run(
                 [
@@ -84,6 +88,12 @@ class BinarySizeCliTests(unittest.TestCase):
                     str(markdown_path),
                     "--github-output",
                     str(github_output),
+                    "--evidence-bundle",
+                    str(evidence_bundle),
+                    "--base-file-report",
+                    str(base_file_report),
+                    "--head-file-report",
+                    str(head_file_report),
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
@@ -113,6 +123,20 @@ class BinarySizeCliTests(unittest.TestCase):
                 "warning=true\ndelta_bytes=52429\nstatus=warning\n",
                 github_output.read_text(encoding="utf-8"),
             )
+            subject = json.loads(
+                (evidence_bundle / "subject.json").read_text(encoding="utf-8")
+            )
+            context = json.loads(
+                (evidence_bundle / "context.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual("b" * 40, subject["head"]["source_sha"])
+            self.assertEqual("a" * 40, context["base"]["source_sha"])
+            self.assertEqual(52_429, context["warning_threshold_bytes"])
+            self.assertEqual(
+                base_sections.read_bytes(),
+                (evidence_bundle / "raw" / "base-sections.txt").read_bytes(),
+            )
+            self.assertFalse((evidence_bundle / "proof.lock").exists())
 
     def test_linux_report_attributes_elf_section_growth(self) -> None:
         with tempfile.TemporaryDirectory(prefix="fx-binary-size-") as tmp:
@@ -270,8 +294,18 @@ class BinarySizeWorkflowTests(unittest.TestCase):
         self.assertIn("python3 -m scripts.binary_size", workflow)
         self.assertIn("$GITHUB_STEP_SUMMARY", workflow)
         self.assertIn("::warning title=Binary size increase::", workflow)
-        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertIn(
+            "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", workflow
+        )
+        self.assertIn("uses: ./.github/actions/setup-proofpack-fx", workflow)
+        self.assertIn("proofpack fx seal", workflow)
+        self.assertIn('--evidence-bundle "$evidence_dir/bundle"', workflow)
         self.assertIn("binary-size-evidence-${{ matrix.name }}", workflow)
+        self.assertIn("binary-size-failure-${{ matrix.name }}", workflow)
+        self.assertIn(
+            "      - name: Upload size failure diagnostics\n        if: failure()",
+            workflow,
+        )
         self.assertIn("binary-size-binaries-${{ matrix.name }}", workflow)
 
 

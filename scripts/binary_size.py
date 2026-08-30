@@ -5,8 +5,8 @@ import hashlib
 import json
 import pathlib
 import re
+import shutil
 from collections.abc import Sequence
-
 
 MIB = 1_048_576
 DEFAULT_WARNING_BYTES = 52_429
@@ -210,8 +210,10 @@ def markdown_report(report: dict[str, object]) -> str:
     lines: list[str] = [
         "# Binary size",
         "",
-        "This comparison is informational. "
-        "Release PGSO qualification remains authoritative.",
+        (
+            "This comparison is informational. "
+            "Release PGSO qualification remains authoritative."
+        ),
         "",
         f"Target: `{report['target']}`",
         "",
@@ -250,6 +252,66 @@ def markdown_report(report: dict[str, object]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def write_evidence_bundle(
+    destination: pathlib.Path,
+    *,
+    report: dict[str, object],
+    base_file_report: pathlib.Path,
+    head_file_report: pathlib.Path,
+    base_sections: pathlib.Path,
+    head_sections: pathlib.Path,
+) -> None:
+    """Write the neutral binary-size evidence consumed by the ProofPack fx plugin."""
+    if destination.exists():
+        if not destination.is_dir() or any(destination.iterdir()):
+            raise BinarySizeError(
+                f"evidence bundle must be a new or empty directory: {destination}"
+            )
+    else:
+        destination.mkdir(parents=True)
+    for path in (base_file_report, head_file_report, base_sections, head_sections):
+        if not path.is_file() or path.is_symlink():
+            raise BinarySizeError(f"raw evidence is missing or unsafe: {path}")
+
+    base = report["base"]
+    head = report["head"]
+    assert isinstance(base, dict) and isinstance(head, dict)
+    subject = {
+        "schema_version": "fx-binary-size-subject/v1",
+        "optimization": "ReleaseSafe",
+        "target": report["target"],
+        "head": head,
+    }
+    context = {
+        "schema_version": "fx-binary-size-context/v1",
+        "base": base,
+        "decision": "informational_warning",
+        "warning_threshold_bytes": report["warning_threshold_bytes"],
+    }
+    (destination / "subject.json").write_text(
+        json.dumps(subject, allow_nan=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (destination / "context.json").write_text(
+        json.dumps(context, allow_nan=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (destination / "report.json").write_text(
+        json.dumps(report, allow_nan=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (destination / "report.md").write_text(markdown_report(report), encoding="utf-8")
+    raw = destination / "raw"
+    raw.mkdir()
+    for source, name in (
+        (base_file_report, "base-file.txt"),
+        (head_file_report, "head-file.txt"),
+        (base_sections, "base-sections.txt"),
+        (head_sections, "head-sections.txt"),
+    ):
+        shutil.copyfile(source, raw / name)
+
+
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compare stripped ReleaseSafe fx binaries",
@@ -269,6 +331,9 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--output-json", type=pathlib.Path, required=True)
     parser.add_argument("--output-markdown", type=pathlib.Path, required=True)
     parser.add_argument("--github-output", type=pathlib.Path)
+    parser.add_argument("--evidence-bundle", type=pathlib.Path)
+    parser.add_argument("--base-file-report", type=pathlib.Path)
+    parser.add_argument("--head-file-report", type=pathlib.Path)
     return parser.parse_args(argv)
 
 
@@ -295,6 +360,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         encoding="utf-8",
     )
     args.output_markdown.write_text(markdown_report(report), encoding="utf-8")
+    evidence_inputs = (args.base_file_report, args.head_file_report)
+    if args.evidence_bundle is not None:
+        if any(value is None for value in evidence_inputs):
+            raise SystemExit(
+                "--evidence-bundle requires --base-file-report and --head-file-report"
+            )
+        assert args.base_file_report is not None and args.head_file_report is not None
+        try:
+            write_evidence_bundle(
+                args.evidence_bundle,
+                report=report,
+                base_file_report=args.base_file_report,
+                head_file_report=args.head_file_report,
+                base_sections=args.base_sections,
+                head_sections=args.head_sections,
+            )
+        except BinarySizeError as error:
+            raise SystemExit(str(error)) from error
+    elif any(value is not None for value in evidence_inputs):
+        raise SystemExit("file reports require --evidence-bundle")
     if args.github_output:
         warning = str(report["status"] == "warning").lower()
         delta = report["delta"]

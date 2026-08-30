@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import unittest
-
-import pathlib
 import dataclasses
+import pathlib
+import unittest
 
 from scripts.pgso.corpus import Corpus, Scenario
 from scripts.pgso.distributed import (
     aggregate_measurement_shards,
     aggregate_scenario_shards,
     matrix_payload,
+    pgso_proofpack_documents,
     plan_shards,
     run_plan,
     select_corpus,
@@ -43,6 +43,7 @@ class WorkflowContractTests(unittest.TestCase):
         behavior_job = workflow.split("\n  behavior:\n", 1)[1].split(
             "\n  startup:\n", 1
         )[0]
+        aggregate_job = workflow.split("\n  aggregate:\n", 1)[1]
 
         self.assertIn("  zig:\n", action)
         self.assertIn(
@@ -51,6 +52,8 @@ class WorkflowContractTests(unittest.TestCase):
         )
         self.assertIn('          zig: "true"', behavior_job)
         self.assertNotIn('          llvm: "true"', behavior_job)
+        self.assertIn("uses: ./.github/actions/setup-proofpack-fx", aggregate_job)
+        self.assertIn("proofpack fx seal", aggregate_job)
 
     def test_heavy_workers_measure_candidate_built_profile_pairs(self) -> None:
         repo_root = pathlib.Path(__file__).resolve().parents[3]
@@ -89,6 +92,61 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("fromJSON(needs.seed.outputs.heavy)", heavy_job)
         self.assertNotIn("name: [help, version", startup_job)
         self.assertNotIn("- file-index-100k", heavy_job)
+
+    def test_pgso_semantic_roots_freeze_subject_and_policy(self) -> None:
+        identity = BuildIdentity(
+            source_sha="a" * 40,
+            target="aarch64-macos",
+            host_arch="arm64",
+            zig_version="0.16.0",
+            llvm_version="22.1.0",
+            bitcode_sha256="b" * 64,
+            corpus_sha256="c" * 64,
+            update_channel="stable",
+            generation_flags=GENERATION_FLAGS,
+        )
+        corpus = Corpus(
+            repo_root=pathlib.Path("/tmp/repo"),
+            manifest_path=pathlib.Path("/tmp/repo/scripts/pgso/corpus.json"),
+            manifest_sha256="d" * 64,
+            scenarios=(scenario("train", 1.0),),
+            intentional_exclusions=(),
+            verification_scenarios=(),
+        )
+
+        subject, context = pgso_proofpack_documents(
+            identity=identity,
+            candidate_sha256="e" * 64,
+            candidate_size_bytes=123,
+            candidate_evidence={
+                "artifacts": {"control": {"sha256": "f" * 64, "size_bytes": 122}},
+                "profile": {"sha256": "1" * 64},
+            },
+            corpus=corpus,
+        )
+
+        self.assertEqual("a" * 40, subject["source_sha"])
+        self.assertEqual("e" * 64, subject["candidate"]["sha256"])
+        self.assertEqual("d" * 64, context["corpus_sha256"])
+        self.assertEqual(0.10, context["qualification_policy"]["maximum_regression"])
+        self.assertEqual(
+            1_000,
+            context["qualification_policy"]["minimum_startup_samples_per_arm"],
+        )
+
+    def test_release_consumer_verifies_aggregate_proof_before_signing(self) -> None:
+        repo_root = pathlib.Path(__file__).resolve().parents[3]
+        release = (repo_root / ".github/workflows/release.yml").read_text()
+        signing_job = release.split("\n  sign-macos-arm64:\n", 1)[1].split(
+            "\n  release:\n", 1
+        )[0]
+
+        self.assertIn("uses: ./.github/actions/setup-proofpack-fx", signing_job)
+        self.assertIn("proofpack fx verify", signing_job)
+        self.assertLess(
+            signing_job.index("proofpack fx verify"),
+            signing_job.index("scripts/sign-and-notarize-macos.sh"),
+        )
 
 
 class ShardPlanningTests(unittest.TestCase):

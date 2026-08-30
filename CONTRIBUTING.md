@@ -422,7 +422,7 @@ Do not create tags manually. The workflow owns tag creation.
 
 ## Benchmarks
 
-Startup latency benchmarks run automatically on every PR and push to `main` via `.github/workflows/bench.yml`.
+Startup latency benchmarks run automatically on every PR and push to `main` via `.github/workflows/bench.yml`. The full evidence contract and ProofPack plugin boundary are documented in [`benchmarks/README.md`](benchmarks/README.md).
 
 The workflow builds a ReleaseSafe binary, then uses [hyperfine](https://github.com/sharkdp/hyperfine) to measure wall-clock time for six paths:
 
@@ -435,7 +435,9 @@ The workflow builds a ReleaseSafe binary, then uses [hyperfine](https://github.c
 | `fx doctor --json`     | 2ms    | System checks, subprocess spawns                   |
 | `fx sessions --json`   | 2ms    | Session directory read                             |
 
-On PRs the check **fails** if any command exceeds its budget.
+On PRs the check **fails** if any command exceeds its budget. It also builds the
+base revision and reports an informational, paired-block same-runner comparison with
+a nominal one-sided 95% upper confidence bound that assumes independent blocks.
 
 The table is the authoritative Linux CI contract. Non-Linux local runs report
 raw means for comparison but do not assign a substitute product budget because
@@ -452,9 +454,15 @@ brew install hyperfine             # macOS (one-time)
 ./benchmarks/startup.sh --quick    # quick run (20 iterations)
 ```
 
-CI uses `--runs 100` with a reduced warmup and skips the build step because the
-workflow builds ReleaseSafe first. Results are written to
-`benchmarks/results/` (gitignored).
+CI uses the registered `ci` mode with 100 samples and ten warmups per measured
+arm. It skips the runner's build step because the workflow builds ReleaseSafe
+first. The runner rejects ambient fx configuration, incomplete preflights,
+unknown cases, and the wrong Hyperfine version. Statistics are recomputed from
+raw samples.
+
+Results are written to `benchmarks/results/startup-evidence/` (gitignored).
+CI seals and verifies that directory through the separately installed
+`proofpack fx` plugin, then uploads the complete bundle as a retained artifact.
 
 ## Before Marking a PR Ready
 

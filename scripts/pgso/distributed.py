@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import dataclasses
 import argparse
+import dataclasses
 import json
 import os
 import pathlib
@@ -39,8 +39,12 @@ from scripts.pgso.pipeline import (
 )
 from scripts.pgso.qualify import (
     BENCHMARK_PLANS,
+    MAXIMUM_REGRESSION,
+    MINIMUM_SAMPLES,
     STARTUP_COMMANDS,
+    STARTUP_MAX_RUNS_PER_ROUND,
     STARTUP_MINIMUM_SAMPLES,
+    STARTUP_WARMUP_RUNS,
     BenchmarkPair,
     build_profile_linked_benchmarks,
     measure_heavy_workloads,
@@ -52,7 +56,6 @@ from scripts.pgso.qualify import (
 )
 from scripts.pgso.runner import cancellation_guard, run_checked
 from scripts.pgso.toolchain import SUPPORTED_TARGET, Toolchain
-
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_CORPUS = REPO_ROOT / "scripts" / "pgso" / "corpus.json"
@@ -161,6 +164,45 @@ def _mapping(value: object, label: str) -> Mapping[str, object]:
     ):
         raise PgsoError(f"{label} must be an object")
     return value
+
+
+def pgso_proofpack_documents(
+    *,
+    identity: BuildIdentity,
+    candidate_sha256: str,
+    candidate_size_bytes: int,
+    candidate_evidence: Mapping[str, object],
+    corpus: Corpus,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Build neutral semantic roots for the optional ProofPack fx plugin."""
+    if candidate_size_bytes <= 0:
+        raise PgsoError("PGSO candidate size must be positive")
+    artifacts = _mapping(candidate_evidence.get("artifacts"), "candidate artifacts")
+    control = _mapping(artifacts.get("control"), "PGSO control artifact")
+    profile = _mapping(candidate_evidence.get("profile"), "candidate profile evidence")
+    subject = {
+        "schema_version": "fx-pgso-subject/v1",
+        "source_sha": identity.source_sha,
+        "target": identity.target,
+        "candidate": {
+            "sha256": candidate_sha256,
+            "size_bytes": candidate_size_bytes,
+        },
+    }
+    context = {
+        "schema_version": "fx-pgso-context/v1",
+        "control": dict(control),
+        "corpus_sha256": corpus.manifest_sha256,
+        "profile_sha256": profile.get("sha256"),
+        "qualification_policy": {
+            "maximum_regression": MAXIMUM_REGRESSION,
+            "minimum_heavy_samples_per_arm": MINIMUM_SAMPLES,
+            "minimum_startup_samples_per_arm": STARTUP_MINIMUM_SAMPLES,
+            "startup_maximum_runs_per_round": STARTUP_MAX_RUNS_PER_ROUND,
+            "startup_warmup_runs_per_round": STARTUP_WARMUP_RUNS,
+        },
+    }
+    return subject, context
 
 
 def identity_from_mapping(value: object) -> BuildIdentity:
@@ -1168,6 +1210,15 @@ def run_aggregate(arguments: argparse.Namespace) -> pathlib.Path:
     }
     manifest_path = output / "manifest.json"
     _write_json(manifest_path, payload)
+    subject, context = pgso_proofpack_documents(
+        identity=identity,
+        candidate_sha256=candidate_hash,
+        candidate_size_bytes=destination.stat().st_size,
+        candidate_evidence=candidate_evidence,
+        corpus=corpus,
+    )
+    _write_json(output / "subject.json", subject)
+    _write_json(output / "context.json", context)
     return manifest_path
 
 

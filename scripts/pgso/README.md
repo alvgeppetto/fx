@@ -125,3 +125,9 @@ repository permissions and do not change release, dev-channel, CDN, tag, or
 GitHub Release state. The stable release workflow may call the same gate with
 release packaging enabled; only the candidate copied by the successful final
 aggregate is packaged as `fx-macos-aarch64.tar.gz`.
+
+A successful distributed aggregate writes neutral subject and context documents. The workflow then
+uses the separately installed `proofpack fx` plugin to seal and verify the aggregate's exact file
+inventory. ProofPack owns the lock and evidence-chain format; the PGSO driver remains independent of
+ProofPack and can still produce an inspectable unsealed aggregate outside CI. The release consumer
+verifies the downloaded proof again before it signs or packages the candidate.

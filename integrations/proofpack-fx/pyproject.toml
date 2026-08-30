@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "proofpack-fx"
+version = "0.1.0"
+description = "ProofPack plugin for sealing and verifying fx measurement evidence"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+  "proofpack-core>=0.1,<0.2",
+  "typer>=0.15,<1",
+]
+
+[project.entry-points."proofpack.cli"]
+fx = "proofpack_fx.cli:attach"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/proofpack_fx"]

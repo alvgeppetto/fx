@@ -47,12 +47,12 @@ jobs:
       TARGET: ${{ matrix.target }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Zig
-        uses: mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: "0.16.0"
           use-cache: false
@@ -131,8 +131,20 @@ jobs:
             --warning-bytes 52429 \
             --output-json "$evidence_dir/report.json" \
             --output-markdown "$evidence_dir/report.md" \
+            --evidence-bundle "$evidence_dir/bundle" \
+            --base-file-report "$evidence_dir/base-file.txt" \
+            --head-file-report "$evidence_dir/head-file.txt" \
             --github-output "$GITHUB_OUTPUT"
           cat "$evidence_dir/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup ProofPack fx plugin
+        uses: ./.github/actions/setup-proofpack-fx
+
+      - name: Seal and verify size evidence
+        run: |
+          set -euo pipefail
+          proofpack fx seal "$RUNNER_TEMP/fx-binary-size-evidence/bundle"
+          proofpack fx verify "$RUNNER_TEMP/fx-binary-size-evidence/bundle"
 
       - name: Annotate notable growth
         if: steps.size.outputs.warning == 'true'
@@ -143,23 +155,33 @@ jobs:
             "::warning title=Binary size increase::${TARGET} ReleaseSafe grew by ${DELTA_BYTES} bytes; inspect the retained section report."
 
       - name: Upload size evidence
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary-size-evidence-${{ matrix.name }}-${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/fx-binary-size-evidence/bundle
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload size failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-size-failure-${{ matrix.name }}-${{ github.event.pull_request.number }}
           path: |
+            ${{ runner.temp }}/fx-binary-size-evidence/bundle
             ${{ runner.temp }}/fx-binary-size-evidence/report.json
             ${{ runner.temp }}/fx-binary-size-evidence/report.md
             ${{ runner.temp }}/fx-binary-size-evidence/base-file.txt
             ${{ runner.temp }}/fx-binary-size-evidence/head-file.txt
             ${{ runner.temp }}/fx-binary-size-evidence/base-sections.txt
             ${{ runner.temp }}/fx-binary-size-evidence/head-sections.txt
-          if-no-files-found: warn
-          retention-days: 30
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload binaries for investigation
         if: steps.size.outputs.warning == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary-size-binaries-${{ matrix.name }}-${{ github.event.pull_request.number }}
           path: |

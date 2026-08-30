@@ -1,0 +1,171 @@
+{
+  "cases": [
+    {
+      "argv": [],
+      "environment": {},
+      "executable": "process_baseline",
+      "fixture": "general",
+      "id": "process-baseline",
+      "label": "process baseline",
+      "linux_mean_ceiling_seconds": null,
+      "role": "diagnostic",
+      "stdout_policy": "empty",
+      "working_directory": "repository"
+    },
+    {
+      "argv": [],
+      "environment": {
+        "FX_BENCH": "1"
+      },
+      "executable": "fx",
+      "fixture": "general",
+      "id": "startup",
+      "label": "fx (startup)",
+      "linux_mean_ceiling_seconds": 0.002,
+      "role": "gating",
+      "stdout_policy": "empty",
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "help"
+      ],
+      "environment": {},
+      "executable": "fx",
+      "fixture": "general",
+      "id": "help",
+      "label": "fx help",
+      "linux_mean_ceiling_seconds": 0.002,
+      "role": "gating",
+      "stdout_policy": "nonempty",
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "status",
+        "--json"
+      ],
+      "environment": {},
+      "executable": "fx",
+      "fixture": "general",
+      "id": "status",
+      "label": "fx status --json",
+      "linux_mean_ceiling_seconds": 0.002,
+      "role": "gating",
+      "stdout_policy": "json",
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "doctor",
+        "--json"
+      ],
+      "environment": {},
+      "executable": "fx",
+      "fixture": "general",
+      "id": "doctor",
+      "label": "fx doctor --json",
+      "linux_mean_ceiling_seconds": 0.002,
+      "role": "gating",
+      "stdout_policy": "json",
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "sessions",
+        "--json"
+      ],
+      "environment": {},
+      "executable": "fx",
+      "fixture": "sessions",
+      "id": "sessions",
+      "label": "fx sessions --json",
+      "linux_mean_ceiling_seconds": 0.002,
+      "role": "gating",
+      "stdout_policy": "json",
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "background",
+        "--json"
+      ],
+      "environment": {},
+      "executable": "fx",
+      "fixture": "sessions",
+      "id": "background",
+      "label": "fx background --json",
+      "linux_mean_ceiling_seconds": 0.002,
+      "role": "gating",
+      "stdout_policy": "json",
+      "working_directory": "session_workspace"
+    }
+  ],
+  "environment": {
+    "fixed": {
+      "FX_AUTO_UPGRADE": "0",
+      "FX_DISABLE_KEYCHAIN": "1",
+      "FX_SKIP_ONBOARDING": "1",
+      "FX_SOUND": "0",
+      "NO_COLOR": "1"
+    },
+    "inherited": [
+      "LANG",
+      "LC_ALL",
+      "LC_CTYPE",
+      "LOGNAME",
+      "PATH",
+      "SHELL",
+      "SYSTEM_VERSION_COMPAT",
+      "TEMP",
+      "TERM",
+      "TMP",
+      "TMPDIR",
+      "TZ",
+      "USER",
+      "__CF_USER_TEXT_ENCODING"
+    ]
+  },
+  "measurement": {
+    "metric": "raw_wall_clock_seconds",
+    "modes": {
+      "ci": {
+        "comparison_blocks": 10,
+        "comparison_warmup_runs_per_block": 1,
+        "runs": 100,
+        "warmup_runs": 10
+      },
+      "default": {
+        "comparison_blocks": 10,
+        "comparison_warmup_runs_per_block": 1,
+        "runs": 100,
+        "warmup_runs": 10
+      },
+      "quick": {
+        "comparison_blocks": 4,
+        "comparison_warmup_runs_per_block": 1,
+        "runs": 20,
+        "warmup_runs": 3
+      }
+    },
+    "process_baseline_policy": "diagnostic_only_no_subtraction",
+    "relative_comparison": {
+      "confidence_assumption": "independent_block_log_ratios",
+      "confidence_level": 0.95,
+      "decision": "informational",
+      "maximum_regression": 0.1,
+      "method": "one_sided_paired_t_on_block_log_ratios",
+      "order": "alternating_control_head"
+    },
+    "shell": "none",
+    "tool": {
+      "name": "hyperfine",
+      "version": "1.20.0"
+    }
+  },
+  "platform_policy": {
+    "Linux": "gate_raw_mean",
+    "other": "informational_raw_mean"
+  },
+  "schema_version": "fx-startup-benchmark-plan/v1"
+}

@@ -153,6 +153,12 @@ jobs:
           name: pgso-evidence-macos-arm64-${{ github.sha }}
           path: ${{ runner.temp }}/fx-pgso-aggregate
 
+      - name: Setup ProofPack fx plugin
+        uses: ./.github/actions/setup-proofpack-fx
+
+      - name: Verify aggregate evidence
+        run: proofpack fx verify "$RUNNER_TEMP/fx-pgso-aggregate"
+
       - name: Restore executable mode
         run: chmod +x "$RUNNER_TEMP/fx-pgso-aggregate/candidate/fx"
 
